@@ -1,0 +1,184 @@
+services:
+    postgres:
+        image: postgres:16
+        container_name: postgres
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        volumes:
+            - postgres-data:/var/lib/postgresql/data
+        networks:
+            - liferay-network
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        mem_limit: 4g
+        cpus: 2.0
+
+    liferay-node1:
+        image: liferay/portal:7.4.3.132-ga132
+        container_name: liferay-node1
+        environment:
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_UPPERCASEC_LASS_UPPERCASEN_AME=org.postgresql.Driver
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}?useUnicode=true&characterEncoding=UTF-8&useFastDateParsing=false
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=${POSTGRES_USER}
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=${POSTGRES_PASSWORD}
+            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_CONTROL=control-channel-logic-name-1
+            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_TRANSPORT_PERIOD_NUMBER0=transport-channel-logic-name-1
+            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=postgres:5432
+            - JAVA_OPTS=-Xms6g -Xmx6g -XX:MaxMetaspaceSize=1g -Djava.net.preferIPv4Stack=true
+        volumes:
+            - liferay-node1-data:/opt/liferay/data
+            - ./configs:/opt/liferay/osgi/configs
+            - ./files:/mnt/liferay/files
+        networks:
+            - liferay-network
+        ports:
+            - "8080:8080"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            es-node1:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+            start_period: 180s
+        mem_limit: 8g
+        cpus: 4.0
+
+    liferay-node2:
+        image: liferay/portal:7.4.3.132-ga132
+        container_name: liferay-node2
+        environment:
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_DRIVER_UPPERCASEC_LASS_UPPERCASEN_AME=org.postgresql.Driver
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}?useUnicode=true&characterEncoding=UTF-8&useFastDateParsing=false
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_USERNAME=${POSTGRES_USER}
+            - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=${POSTGRES_PASSWORD}
+            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_CONTROL=control-channel-logic-name-2
+            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_TRANSPORT_PERIOD_NUMBER0=transport-channel-logic-name-2
+            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=postgres:5432
+            - JAVA_OPTS=-Xms6g -Xmx6g -XX:MaxMetaspaceSize=1g -Djava.net.preferIPv4Stack=true
+        volumes:
+            - liferay-node2-data:/opt/liferay/data
+            - ./configs:/opt/liferay/osgi/configs
+            - ./files:/mnt/liferay/files
+        networks:
+            - liferay-network
+        ports:
+            - "9080:8080"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            es-node1:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+            start_period: 180s
+        mem_limit: 8g
+        cpus: 4.0
+
+    nginx:
+        image: nginx:latest
+        container_name: nginx
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf:ro
+        ports:
+            - "80:80"
+        depends_on:
+            - liferay-node1
+            - liferay-node2
+        networks:
+            - liferay-network
+        mem_limit: 512m
+        cpus: 0.5
+
+    es-node1:
+        image: elasticsearch:8.17.0
+        container_name: es-node1
+        environment:
+            - node.name=es-node1
+            - cluster.name=liferay-es
+            - discovery.seed_hosts=es-node2
+            - cluster.initial_master_nodes=es-node1,es-node2
+            - xpack.security.enabled=false
+            - bootstrap.memory_lock=true
+            - ES_JAVA_OPTS=-Xms4g -Xmx4g
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        volumes:
+            - es-node1-data:/usr/share/elasticsearch/data
+        ports:
+            - "9200:9200"
+        healthcheck:
+            test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health | grep -E 'green|yellow'"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+        command: >
+            sh -c "
+            cd /usr/share/elasticsearch/bin;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-icu' ]; then ./elasticsearch-plugin install analysis-icu; fi;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-kuromoji' ]; then ./elasticsearch-plugin install analysis-kuromoji; fi;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-smartcn' ]; then ./elasticsearch-plugin install analysis-smartcn; fi;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-stempel' ]; then ./elasticsearch-plugin install analysis-stempel; fi;
+            /usr/local/bin/docker-entrypoint.sh;
+            "
+        networks:
+            - liferay-network
+        mem_limit: 5g
+        cpus: 2.0
+
+    es-node2:
+        image: elasticsearch:8.17.0
+        container_name: es-node2
+        environment:
+            - node.name=es-node2
+            - cluster.name=liferay-es
+            - discovery.seed_hosts=es-node1
+            - cluster.initial_master_nodes=es-node1,es-node2
+            - xpack.security.enabled=false
+            - bootstrap.memory_lock=true
+            - ES_JAVA_OPTS=-Xms4g -Xmx4g
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        volumes:
+            - es-node2-data:/usr/share/elasticsearch/data
+        command: >
+            sh -c "
+            cd /usr/share/elasticsearch/bin;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-icu' ]; then ./elasticsearch-plugin install analysis-icu; fi;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-kuromoji' ]; then ./elasticsearch-plugin install analysis-kuromoji; fi;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-smartcn' ]; then ./elasticsearch-plugin install analysis-smartcn; fi;
+            if [ ! -d '/usr/share/elasticsearch/plugins/analysis-stempel' ]; then ./elasticsearch-plugin install analysis-stempel; fi;
+            /usr/local/bin/docker-entrypoint.sh;
+            "
+        networks:
+            - liferay-network
+        mem_limit: 5g
+        cpus: 2.0
+
+networks:
+    liferay-network:
+        driver: bridge
+
+volumes:
+    postgres-data:
+    liferay-node1-data:
+    liferay-node2-data:
+    es-node1-data:
+    es-node2-data:
