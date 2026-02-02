@@ -30,16 +30,18 @@ services:
             - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=${POSTGRES_PASSWORD}
             - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_CONTROL=control-channel-logic-name-1
             - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_TRANSPORT_PERIOD_NUMBER0=transport-channel-logic-name-1
-            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=postgres:5432
             - JAVA_OPTS=-Xms6g -Xmx6g -XX:MaxMetaspaceSize=1g -Djava.net.preferIPv4Stack=true
         volumes:
             - liferay-node1-data:/opt/liferay/data
             - ./configs:/opt/liferay/osgi/configs
+            - ./unicast:/opt/liferay/unicast
             - ./files:/mnt/liferay/files
         networks:
             - liferay-network
         ports:
             - "8080:8080"
+            - "7800:7800"
+            - "7801:7801"
         depends_on:
             postgres:
                 condition: service_healthy
@@ -64,16 +66,18 @@ services:
             - LIFERAY_JDBC_PERIOD_DEFAULT_PERIOD_PASSWORD=${POSTGRES_PASSWORD}
             - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_CONTROL=control-channel-logic-name-2
             - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_CHANNEL_PERIOD_LOGIC_PERIOD_NAME_PERIOD_TRANSPORT_PERIOD_NUMBER0=transport-channel-logic-name-2
-            - LIFERAY_CLUSTER_PERIOD_LINK_PERIOD_AUTODETECT_PERIOD_ADDRESS=postgres:5432
             - JAVA_OPTS=-Xms6g -Xmx6g -XX:MaxMetaspaceSize=1g -Djava.net.preferIPv4Stack=true
         volumes:
             - liferay-node2-data:/opt/liferay/data
             - ./configs:/opt/liferay/osgi/configs
+            - ./unicast:/opt/liferay/unicast
             - ./files:/mnt/liferay/files
         networks:
             - liferay-network
         ports:
             - "9080:8080"
+            - "8800:7800"
+            - "8801:7801"
         depends_on:
             postgres:
                 condition: service_healthy
