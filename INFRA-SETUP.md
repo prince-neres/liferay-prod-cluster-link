@@ -196,3 +196,8 @@ Nos logs:
 ```
 Accepted view
 ```
+
+## Referências:
+
+- [Configuring Cluster Link](https://learn.liferay.com/w/dxp/self-hosted-installation-and-upgrades/setting-up-liferay/clustering-for-high-availability/configuring-cluster-link#configuring-cluster-link-1)
+- [Configuring Unicast over TCP](https://learn.liferay.com/w/dxp/self-hosted-installation-and-upgrades/setting-up-liferay/clustering-for-high-availability/configuring-unicast-over-tcp#unicast-configurations)
