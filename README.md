@@ -1,49 +1,52 @@
-# Liferay Cluster Link Setup (Docker Environment)
+# Configuração do Liferay Cluster Link (Ambiente Docker)
 
-This document describes how to configure **Liferay Cluster Link** using **Docker containers**, based on a multi-node Liferay 7.4 environment with a shared database and Elasticsearch.
+Este documento descreve como configurar o **Liferay Cluster Link** utilizando **containers Docker**, com base em um ambiente multi-nó do Liferay 7.4 com banco de dados e Elasticsearch compartilhados.
 
-The key idea is:
+A ideia principal é:
 
-> **Start the containers with Cluster Link disabled, generate the certificate on the first Liferay node, copy it to the other nodes, and only then enable Cluster Link.**
-
----
-
-## Environment Overview
-
-* Docker Compose based setup
-* Multiple Liferay nodes
-* Shared database (DB2 in this case)
-* Shared Elasticsearch
-* Cluster communication using **JGroups + X509 (RSA)**
+> **Iniciar os containers com o Cluster Link desabilitado, gerar o certificado no primeiro nó do Liferay, copiá-lo para os outros nós e somente então habilitar o Cluster Link.**
 
 ---
 
-## Step 1 — Start Containers with Cluster Link Disabled
+## Visão Geral do Ambiente
 
-Initially, **Cluster Link must NOT be enabled**.
+* Setup baseado em Docker Compose
+* Múltiplos nós do Liferay
+* Banco de dados compartilhado (DB2 neste caso)
+* Elasticsearch compartilhado
+* Comunicação de cluster usando **JGroups + X509 (RSA)**
 
-In the `portal-ext.properties` file of **all Liferay nodes**, keep the Cluster Link properties commented out or not present:
+---
+
+## Passo 1 — Iniciar os Containers com o Cluster Link Desabilitado
+
+Inicialmente, o **Cluster Link NÃO deve estar habilitado**.
+
+No arquivo `portal-ext.properties` de **todos os nós do Liferay**, mantenha as propriedades de Cluster Link comentadas ou ausentes:
 
 ```properties
-# ## CLUSTER LINK ##
+# # Cluster Link
 # cluster.link.enabled=true
-# cluster.link.autodetect.address=postgres:5432
-# cluster.link.channel.properties.control=jgroups/secure/x509/udp_control.xml
-# cluster.link.channel.properties.transport.0=jgroups/secure/x509/udp_transport.xml
+# cluster.link.autodetect.address=
+# # TCP unicast JGroups
+# cluster.link.channel.properties.control=/opt/liferay/unicast/tcp.xml
+# cluster.link.channel.properties.transport.0=/opt/liferay/unicast/tcp.xml
+# # Segurança X.509
 # cluster.link.auth.cert.alias=liferay-node1-cert
 # cluster.link.auth.cert.password=TESTE$%3030
 # cluster.link.auth.cipher.type=RSA
 # cluster.link.auth.keystore.password=TESTE$%3030
-# cluster.link.auth.keystore.path=/opt/liferay/cluster_link_keystore.jks
+# cluster.link.auth.keystore.path=/opt/liferay/unicast/cluster_link_keystore.jks
 # cluster.link.auth.keystore.type=JKS
 # cluster.link.auth.value=TESTE$%3030
+# # Exibir o nó no rodapé
 # web.server.display.node=true
 ```
 
-> **Why?**
-> At this point, the keystore does not exist yet. If Cluster Link is enabled without the certificate, Liferay will fail to start.
+> **Por quê?**  
+> Neste ponto, o keystore ainda não existe. Se o Cluster Link for habilitado sem o certificado, o Liferay falhará ao iniciar.
 
-Start the containers normally:
+Inicie os containers normalmente:
 
 ```bash
 docker compose up -d
@@ -51,113 +54,77 @@ docker compose up -d
 
 ---
 
-## Step 2 — Generate the Certificate on the First Liferay Node
+## Passo 2 — Gerar o Certificado no Primeiro Nó do Liferay
 
-Access the **first Liferay container**:
+Acesse o **primeiro container do Liferay**:
 
 ```bash
 docker exec -it liferay-node1 bash
 ```
 
-Generate the keystore **inside the container**:
+Gere o keystore **dentro do container**:
 
 ```bash
-keytool -genkeypair \
-  -alias liferay-node1-cert \
-  -keyalg RSA \
-  -keystore /opt/liferay/cluster_link_keystore.jks \
-  -storepass TESTE$%3030
+keytool -genkeypair   -alias liferay-node1-cert   -keyalg RSA   -keystore /opt/liferay/unicast/cluster_link_keystore.jks   -storepass TESTE$%3030
 ```
 
-### Important Notes
+### Observações Importantes
 
-* The keystore path **must match** the property:
+* O caminho do keystore **deve ser o mesmo** configurado na propriedade:
 
   ```properties
-  cluster.link.auth.keystore.path=/opt/liferay/cluster_link_keystore.jks
+  cluster.link.auth.keystore.path=/opt/liferay/unicast/cluster_link_keystore.jks
   ```
-* The alias **must match**:
+
+* O alias **deve ser exatamente o mesmo**:
 
   ```properties
   cluster.link.auth.cert.alias=liferay-node1-cert
   ```
 
-Verify the file:
+Verifique se o arquivo foi criado:
 
 ```bash
-ls -lh /opt/liferay/cluster_link_keystore.jks
+ls -lh /opt/liferay/unicast/cluster_link_keystore.jks
 ```
 
----
+Esse diretório já está mapeado nos containers liferay, para que ambos utilizem o mesmo certificado e arquivo de configuração `tcp.xml` na pasta `/unicast`
 
-## Step 3 — Copy the Keystore to the Other Liferay Nodes
+## Passo 4 — Habilitar o Cluster Link
 
-All Liferay nodes must use **the same keystore**.
-
-### Option 1 — Manual Copy Between Containers
-
-```bash
-docker cp liferay-node1:/opt/liferay/cluster_link_keystore.jks ./cluster_link_keystore.jks
-
-docker cp ./cluster_link_keystore.jks liferay-node2:/opt/liferay/cluster_link_keystore.jks
-```
-
----
-
-### Option 2 — Shared Docker Volume (Recommended)
-
-Mount a shared volume in the `docker-compose.yml`:
-
-```yaml
-volumes:
-  - ./bundles/cluster:/opt/liferay/cluster
-```
-
-Then update the property:
+Após o keystore estar disponível em **todos os nós**, habilite o Cluster Link descomentando as seguintes propriedades no `portal-ext.properties` e, `/files`:
 
 ```properties
-cluster.link.auth.keystore.path=/opt/liferay/cluster/cluster_link_keystore.jks
-```
-
-This guarantees that all nodes always use the same keystore.
-
----
-
-## Step 4 — Enable Cluster Link
-
-After the keystore is available on **all nodes**, enable Cluster Link by adding (or uncommenting) the following properties in `portal-ext.properties` of **every Liferay node**:
-
-```properties
-## CLUSTER LINK ##
+# Cluster Link
 cluster.link.enabled=true
-cluster.link.autodetect.address=postgres:5432
+cluster.link.autodetect.address=
 
-cluster.link.channel.properties.control=jgroups/secure/x509/udp_control.xml
-cluster.link.channel.properties.transport.0=jgroups/secure/x509/udp_transport.xml
+# TCP unicast JGroups
+cluster.link.channel.properties.control=/opt/liferay/unicast/tcp.xml
+cluster.link.channel.properties.transport.0=/opt/liferay/unicast/tcp.xml
 
+# X.509 Security (se você quer segurança)
 cluster.link.auth.cert.alias=liferay-node1-cert
 cluster.link.auth.cert.password=TESTE$%3030
 cluster.link.auth.cipher.type=RSA
-
 cluster.link.auth.keystore.password=TESTE$%3030
-cluster.link.auth.keystore.path=/opt/liferay/cluster_link_keystore.jks
+cluster.link.auth.keystore.path=/opt/liferay/unicast/cluster_link_keystore.jks
 cluster.link.auth.keystore.type=JKS
 cluster.link.auth.value=TESTE$%3030
 
+# Para ver terminal de logs identificando nó
 web.server.display.node=true
 ```
 
-### Notes
-
-* `cluster.link.autodetect.address` can be any shared and reachable address
-* All passwords, aliases and keystore paths **must be identical across nodes**
-* `web.server.display.node=true` helps identify which node is serving requests
+### Observações
+* Todos os passwords, aliases e caminhos do keystore **devem ser idênticos entre os nós**
+* `web.server.display.node=true` ajuda a identificar qual nó está atendendo a requisição
 
 ---
 
-## Step 5 — Restart Liferay Nodes
+## Passo 5 — Reiniciar os Nós do Liferay
 
-Restart the Liferay containers:
+Reinicie os containers do Liferay:
 
 ```bash
 docker compose restart liferay-node1 liferay-node2
@@ -165,12 +132,12 @@ docker compose restart liferay-node1 liferay-node2
 
 ---
 
-## Step 6 — Validation
+## Passo 6 — Validação
 
-Check the Liferay logs. You should see messages similar to:
+Verifique os logs do Liferay. Você deverá ver mensagens semelhantes a:
 
 ```text
 Accepted view
 ```
 
-✅ Cluster Link is now correctly configured for a Docker-based Liferay environment.
+✅ O Cluster Link agora está corretamente configurado para um ambiente Docker com Liferay.
